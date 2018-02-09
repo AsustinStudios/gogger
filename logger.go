@@ -30,64 +30,101 @@ import (
 	"github.com/getsentry/raven-go"
 )
 
+type SentryUser raven.User
+
+type Data struct {
+	User *SentryUser
+	Tags map[string]string
+}
+
 type Logger struct {
-	logger *log.Logger
-	Sentry *raven.Client
-	tags   map[string]string
+	Sentry      *raven.Client
+	logger      *log.Logger
+	debugLogger *log.Logger
+	tags        map[string]string
 }
 
 func New(out io.Writer, prefix string, flag int, sentryUrl string) *Logger {
-	tags := map[string]string{
-		"message":  "Authenticating",
-		"category": "auth",
-		"level":    "info",
-	}
-
-	client, err := raven.NewWithTags(sentryUrl, tags)
+	client, err := raven.New(sentryUrl)
 	if err != nil {
-		fmt.Errorf("<%s>", err)
+		log.Fatal(err)
 	}
-
-	client.SetDefaultLoggerName("This is the logger name")
-	client.SetEnvironment("This is the envirnoment")
-	client.SetIncludePaths([]string{"log.go"})
-	client.SetRelease("v1.5.69")
-
-	return &Logger{log.New(out, prefix, flag), client, tags}
+	client.SetDefaultLoggerName("cloud.asustin.net")
+	return &Logger{
+		Sentry:      client,
+		logger:      log.New(out, prefix, flag),
+		debugLogger: log.New(out, prefix, log.Ldate|log.Ltime|log.Lshortfile),
+	}
 }
 
 func (l *Logger) Debug(msg string, err error, environment map[string]string) {
-	var formatted string
-	env, err := json.MarshalIndent(environment, "", "    ")
-	if err != nil {
-		formatted = fmt.Sprintf("%#v", environment)
-	} else {
-		formatted = string(env)
+	var e, formatted string
+	if environment != nil {
+		env, err := json.MarshalIndent(environment, "", "    ")
+		if err != nil {
+			formatted = fmt.Sprintf("%#v", environment)
+		} else {
+			formatted = string(env)
+		}
 	}
-	l.logger.Printf("DEBUG: %s. %s\n%s\n", msg, err, formatted)
+	if err != nil {
+		e = err.Error()
+	}
+	l.debugLogger.Printf("DEBUG: %s. %s\n%s\n", msg, e, formatted)
 }
 
 func (l *Logger) Info(msg string) {
-	l.logger.Printf(" INFO: %s.\n", msg)
+	l.logger.Printf("INFO: %s.\n", msg)
 }
 
-func (l *Logger) Warn(err error) {
-	//client.SetTagsContext(tags)
-	//client.SetUserContext(&raven.User{"1", "topo", "topo@asustin.net", "164.1.1.88"})
-	//ClearContext()
-
+func (l *Logger) Warn(err error, data *Data) {
+	if data != nil {
+		if data.User != nil {
+			user := raven.User(*data.User)
+			l.Sentry.SetUserContext(&user)
+		}
+		if data.Tags != nil {
+			l.Sentry.SetTagsContext(data.Tags)
+		}
+		defer l.Sentry.ClearContext()
+	}
 	l.Sentry.CaptureError(err, l.tags)
-	l.logger.Printf(" WARN: %s\n", err.Error())
+	l.logger.Printf("WARN: %s\n", err.Error())
 }
 
-func (l *Logger) Error(err error) {
+func (l *Logger) Error(err error, data *Data) {
+	if data != nil {
+		if data.User != nil {
+			user := raven.User(*data.User)
+			l.Sentry.SetUserContext(&user)
+		}
+		if data.Tags != nil {
+			l.Sentry.SetTagsContext(data.Tags)
+		}
+		defer l.Sentry.ClearContext()
+	}
 	l.Sentry.CaptureError(err, l.tags)
 	l.logger.Fatalf("ERROR: %s\n", err.Error())
 }
 
-func (l *Logger) FatalError(err error) {
+func (l *Logger) FatalError(err error, data *Data) {
+	if data != nil {
+		if data.User != nil {
+			user := raven.User(*data.User)
+			l.Sentry.SetUserContext(&user)
+		}
+		if data.Tags != nil {
+			l.Sentry.SetTagsContext(data.Tags)
+		}
+		defer l.Sentry.ClearContext()
+	}
 	l.Sentry.CaptureErrorAndWait(err, l.tags)
 	l.logger.Fatalf("ERROR: %s\n", err.Error())
+}
+
+func (l *Logger) Infof(format string, v ...interface{}) {
+	msg := fmt.Sprintf(format, v)
+	l.logger.Printf("INFO: %s", msg)
 }
 
 func (l *Logger) Fatal(v ...interface{}) {
