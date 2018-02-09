@@ -72,22 +72,22 @@ func (l *Logger) Info(msg string) {
 }
 
 func (l *Logger) Warn(err error) {
-	client.SetTagsContext(tags)
-	client.SetUserContext(&raven.User{"1", "topo", "topo@asustin.net", "164.1.1.88"})
-	ClearContext()
+	//client.SetTagsContext(tags)
+	//client.SetUserContext(&raven.User{"1", "topo", "topo@asustin.net", "164.1.1.88"})
+	//ClearContext()
 
-	l.Sentry.CaptureMessage(err, l.tags)
-	l.logger.Printf(" WARN: %s. %s\n", err.Error())
+	l.Sentry.CaptureError(err, l.tags)
+	l.logger.Printf(" WARN: %s\n", err.Error())
 }
 
 func (l *Logger) Error(err error) {
 	l.Sentry.CaptureError(err, l.tags)
-	l.logger.Fatalf("ERROR: %s. %s\n", err.Error())
+	l.logger.Fatalf("ERROR: %s\n", err.Error())
 }
 
 func (l *Logger) FatalError(err error) {
 	l.Sentry.CaptureErrorAndWait(err, l.tags)
-	l.logger.Fatalf("ERROR: %s. %s\n", err.Error())
+	l.logger.Fatalf("ERROR: %s\n", err.Error())
 }
 
 func (l *Logger) Fatal(v ...interface{}) {
