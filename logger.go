@@ -26,15 +26,33 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
+	"runtime"
 
 	"github.com/getsentry/raven-go"
 )
 
-type SentryUser raven.User
+// User data to show in sentry. It's defined like this:
+// (All fields are optional)
+//     ID       string `json:"id,omitempty"`
+//     Username string `json:"username,omitempty"`
+//     Email    string `json:"email,omitempty"`
+//     IP       string `json:"ip_address,omitempty"`
+type User raven.User
 
 type Data struct {
-	User *SentryUser
-	Tags map[string]string
+	User *User `json:",omitempty"`
+
+	GoMaxProcs   int    `json:	"runtime.GOMAXPROCS,omitempty"`
+	NumCPU       int    `json:"runtime.NumCPU,omitempty"`
+	NumGoroutine int    `json:"runtime.NumGoroutine,omitempty"`
+	Version      string `json:"runtime.Version,omitempty"`
+
+	Tags map[string]string `json:",omitempty"`
+}
+
+func (d *Data) Class() string {
+	return "extra"
 }
 
 type Logger struct {
@@ -53,15 +71,15 @@ func New(out io.Writer, prefix string, flag int, sentryUrl string) *Logger {
 	return &Logger{
 		Sentry:      client,
 		logger:      log.New(out, prefix, flag),
-		debugLogger: log.New(out, prefix, log.Ldate|log.Ltime|log.Lshortfile),
+		debugLogger: log.New(os.Stderr, prefix, log.Ldate|log.Ltime|log.Lshortfile),
 	}
 }
 
 func (l *Logger) Debug(msg string, err error, environment map[string]string) {
 	var e, formatted string
 	if environment != nil {
-		env, err := json.MarshalIndent(environment, "", "    ")
-		if err != nil {
+		env, err2 := json.MarshalIndent(environment, "", "    ")
+		if err2 != nil {
 			formatted = fmt.Sprintf("%#v", environment)
 		} else {
 			formatted = string(env)
@@ -74,21 +92,33 @@ func (l *Logger) Debug(msg string, err error, environment map[string]string) {
 }
 
 func (l *Logger) Info(msg string) {
-	l.logger.Printf("INFO: %s.\n", msg)
+	l.logger.Printf("INFO: %s\n", msg)
 }
 
 func (l *Logger) Warn(err error, data *Data) {
+	data = &Data{
+		User:         &User{"1", "topo", "topo@asustin.net", "192.168.64.32"},
+		GoMaxProcs:   runtime.GOMAXPROCS(-1),
+		NumCPU:       runtime.NumCPU(),
+		NumGoroutine: runtime.NumGoroutine(),
+		Version:      runtime.Version(),
+		Tags:         map[string]string{"category": "testing"},
+	}
+
 	if data != nil {
 		if data.User != nil {
 			user := raven.User(*data.User)
 			l.Sentry.SetUserContext(&user)
+			data.User = nil
 		}
 		if data.Tags != nil {
 			l.Sentry.SetTagsContext(data.Tags)
+			data.Tags = nil
 		}
 		defer l.Sentry.ClearContext()
 	}
-	l.Sentry.CaptureError(err, l.tags)
+
+	l.Sentry.CaptureError(err, nil, data)
 	l.logger.Printf("WARN: %s\n", err.Error())
 }
 
